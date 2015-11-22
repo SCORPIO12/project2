@@ -1,71 +1,62 @@
-########################
-# Customize the test machine
-########################
-machine:
+machine:  
+  environment:
+    PATH: ${PATH}:${HOME}/${CIRCLE_PROJECT_REPONAME}/node_modules/.bin
+    NODE_ENV: test
+    TZ: Europe/Prague
+  node:
+    version: v0.10.33
 
-  # Set the timezeone - any value from /usr/share/zoneinfo/ is valid here
-  timezone:
-    America/Los_Angeles
+general:  
+  artifacts:
+    - code/client/build/karma-coverage
 
-  # Version of ruby to use
-  php:
-    version:
-      version: 5.5.11
-
-  # Override /etc/hosts
-  hosts:
-    circlehost: 127.0.0.1
-    dev.mycompany.com: 127.0.0.1
-
-  # Add some environmental variables
-  pre:
-    - echo 'export CIRCLE_ENV=test' >> ~./circlerc
-
-########################
-# Customize checkout
-########################
-checkout:
-  post:
-    - git submodule update --init # use submodules
-    - mv config/database.yml.ci config/database.yml # use a test version of your database.yml file
-
-########################
-# Customize dependencies
-########################
-dependencies:
-  pre:
-    - npm install coffeescript # install from a different package manager
-    - gem uninstall bundler # use a custom version of bunlder
-    - gem install bundler --pre
-
+dependencies:  
+  cache_directories:
+    - node_modules
+    - code/server/node_modules
+    - code/client/node_modules
+    - code/client/vendor
   override:
-    - bundle install:
-        timeout: 180 # fail if it takes over 3 minutes (note ':' on previous line)
+    - npm prune && npm install
+    - npm prune && npm install:
+        pwd: code/server
+    - npm prune && npm install:
+        pwd: code/client
+    - bower prune && bower install:
+        pwd: code/client
 
-########################
-# Customize database setup
-########################
-database:
-  pre:
-    - mv config/database.yml.ci config/database.yml # completely ignore Circle's database.yml
-
-########################
-# Customize test commands
-########################
-test:
+test:  
   override:
-    - phpunit test/unit-tests # use PHPunit for testing
+    - grunt test:
+        pwd: code/server
+    - grunt test && grunt compile:
+        pwd: code/client
   post:
-    - bundle exec rake jasmine:ci: # add an extra test type
-      environment:
-        RAILS_ENV=test
-        RACK_ENV=test
+    - sed -i -e 's/\/node_modules//' code/server/.gitignore
+    - sed -i -e 's/\/bin//' code/client/.gitignore
+    - git config user.name "circleci"
+    - git config user.email "xxxxx@salsitasoft.com"
+    - git add -A
+    - git commit -m "build"
 
-
-########################
-# Custom notifications
-########################
-notify:
-  webhooks:
-    # A list of hashes representing hooks. Only the url field is supported.
-    - url: https://circleci.com/hooks/circle
+deployment:  
+  try:
+    branch: /try.*/
+    commands:
+      - git push -f git@heroku.com:${CIRCLE_PROJECT_REPONAME}-try.git ${CIRCLE_BRANCH}:master
+  dev:
+    branch: develop
+    commands:
+      - git push -f git@heroku.com:${CIRCLE_PROJECT_REPONAME}-dev.git ${CIRCLE_BRANCH}:master
+  qa:
+    branch: /release.*/
+    commands:
+      - git push -f git@heroku.com:${CIRCLE_PROJECT_REPONAME}-qa.git ${CIRCLE_BRANCH}:master
+  stage:
+    branch: client
+    commands:
+      - git push -f git@heroku.com:${CIRCLE_PROJECT_REPONAME}-stage.git ${CIRCLE_BRANCH}:master
+  prod:
+    branch: master
+    commands:
+      - git push -f git@heroku.com:${CIRCLE_PROJECT_REPONAME}-prod.git ${CIRCLE_BRANCH}:master
